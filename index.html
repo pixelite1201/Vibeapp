@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Daily Memory</title>
+<link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#faf6ef"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-180.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Memory"><meta name="apple-mobile-web-app-status-bar-style" content="default">
+<style>
+:root{--bg:#faf6ef;--fg:#2a2622;--mut:#7a7168;--card:#fff;--bd:#e6dfd2;--ac:#b5532a;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1c1a17;--fg:#ece6dc;--mut:#9b9286;--card:#26231f;--bd:#3a352f;--ac:#e08a5e}}
+:root[data-theme="dark"]{--bg:#1c1a17;--fg:#ece6dc;--mut:#9b9286;--card:#26231f;--bd:#3a352f;--ac:#e08a5e}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.6 Georgia,'Times New Roman',serif}
+main{max-width:640px;margin:0 auto;padding:24px 18px 48px}
+h1{font-size:15px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut);font-weight:400;margin:0 0 18px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:22px}
+.date{font-size:22px;margin:0}.ago{color:var(--ac);font-size:14px;margin:2px 0 14px;font-family:system-ui,sans-serif}
+.txt p{margin:0 0 .9em;white-space:pre-wrap}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+button,select{font:15px system-ui,sans-serif;padding:10px 16px;border-radius:10px;border:1px solid var(--bd);background:var(--card);color:var(--fg)}
+button.p{background:var(--ac);border-color:var(--ac);color:#fff}
+textarea{width:100%;min-height:180px;box-sizing:border-box;font:14px/1.4 system-ui,sans-serif;padding:12px;border-radius:10px;border:1px solid var(--bd);background:var(--card);color:var(--fg)}
+.note{color:var(--mut);font:13px/1.5 system-ui,sans-serif;margin-top:14px}
+.bk{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:12px 14px;margin-bottom:18px;font:14px/1.4 system-ui,sans-serif}
+.bk span{flex:1 1 100%}.bk button{padding:8px 14px}
+.note select{font:13px system-ui,sans-serif;padding:4px 8px;border-radius:8px}
+.hide{display:none}
+</style></head><body><main>
+<h1>Today's memory</h1>
+<div id="bk" class="bk hide"><span id="bkMsg"></span><button class="p" id="bkGo">Back up</button><button id="bkLater">Later</button></div>
+<section id="view" class="hide">
+ <div class="card"><p class="date" id="d"></p><p class="ago" id="a"></p><div class="txt" id="t"></div></div>
+ <div class="row"><button class="p" id="more">Another memory</button><button id="edit">Change diary</button><button id="bkNow">Back up</button></div>
+ <p class="note" id="info"></p>
+ <p class="note"><span id="bkInfo"></span> · <label>Remind me <select id="bkEvery"><option value="1">daily</option><option value="7">weekly</option><option value="30">monthly</option><option value="0">never</option></select></label></p>
+</section>
+<section id="setup">
+ <p>Paste your diary below, or load a text file. Each entry should start with a date like <i>1st Oct</i>, <i>20th jan</i> or <i>March 3</i>. If your entries have no year, enter the year of the first entry. The year goes up by one each time the dates wrap from December back to January, so keep entries in order. A line with just a year (e.g. 2019) also works.</p>
+ <textarea id="ta" placeholder="Paste your diary here…"></textarea>
+ <div class="row">
+  <input type="file" id="f" accept=".txt,.md,text/plain">
+  <input id="yr" type="number" placeholder="Year of first entry" style="width:170px;font:15px system-ui;padding:10px;border-radius:10px;border:1px solid var(--bd);background:var(--card);color:var(--fg)">
+  <select id="fmt"><option value="dm">Day first (12/04/2021)</option><option value="md">Month first (04/12/2021)</option></select>
+ </div>
+ <div class="row"><button class="p" id="go">Save &amp; show today's memory</button><button id="restore">Restore from backup</button><input type="file" id="rf" accept=".json,application/json,text/plain" class="hide"></div>
+ <p class="note" id="err"></p>
+ <p class="note">Your diary is stored only in this browser on this device. Nothing is uploaded.</p>
+</section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const M=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+const MN='jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?';
+const mi=s=>M.indexOf(s.slice(0,3).toLowerCase())+1;
+const Y=(String.raw`(?:[\s,]+(\d{4}))?`);
+const RA=new RegExp('^(\\d{1,2})(?:st|nd|rd|th)?\\s*(?:of\\s+)?('+MN+')\\b\\.?'+Y,'i');   // 1st Oct, 20 January 2020
+const RB=new RegExp('^('+MN+')\\b\\.?\\s*(\\d{1,2})(?:st|nd|rd|th)?\\b'+Y,'i');             // Oct 1st, January 20, 2020
+const RC=/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})\b/;
+const RD=/^(\d{1,2})[\/.\-](\d{1,2})(?:[\/.\-](\d{2,4}))?(?![\d:])/;
+function strip(s){return s.replace(/^[#*>\s\[\(_-]+/,'').replace(/^(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?,?\s+/i,'')}
+function res(y,mo,d,len,s){if(mo<1||mo>12||d<1||d>31)return null;
+ return{y:y||0,mo,d,rest:s.slice(len).replace(/^[\]\)\s:,.\-–—*_#]+/,'')}}
+function parseDate(line,dayFirst){
+ const s=strip(line);let m;
+ if(m=s.match(RC))return res(+m[1],+m[2],+m[3],m[0].length,s);
+ if(m=s.match(RA))return res(+m[3],mi(m[2]),+m[1],m[0].length,s);
+ if(m=s.match(RB))return res(+m[3],mi(m[1]),+m[2],m[0].length,s);
+ if(m=s.match(RD)){let a=+m[1],b=+m[2],y=m[3]?+m[3]:0;if(y&&y<100)y+=y>50?1900:2000;
+  if(!y&&m[0].indexOf('/')<0&&m[0].indexOf('-')<0)return null;
+  let d=dayFirst?a:b,mo=dayFirst?b:a;if(mo>12&&d<=12)[d,mo]=[mo,d];return res(y,mo,d,m[0].length,s)}
+ return null}
+function parse(text,dayFirst,startYear){
+ const out=[];let cur=null,yr=startYear,last=0,hasYear=false;
+ for(const line of text.split(/\r?\n/)){
+  const ym=line.match(/^\s*[#*]*\s*((?:19|20)\d\d)\s*[#*]*\s*$/);
+  if(ym){yr=+ym[1];last=0;hasYear=true;continue}
+  const p=parseDate(line,dayFirst);
+  if(p){
+   const key=p.mo*40+p.d;
+   if(p.y){yr=p.y;hasYear=true}else if(yr&&last&&key<last-20)yr++;   // new year when dates wrap around
+   last=key;
+   cur={y:yr,mo:p.mo,d:p.d,text:p.rest};out.push(cur)}
+  else if(cur){cur.text+='\n'+line}}
+ if(!out.length)return[];
+ if(out.some(e=>!e.y))return null;
+ return out.map(e=>({date:`${e.y}-${String(e.mo).padStart(2,'0')}-${String(e.d).padStart(2,'0')}`,text:e.text.trim()})).filter(e=>e.text)}
+function hash(s){let h=2166136261;for(const c of s){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}return h>>>0}
+function today(){const n=new Date();return`${n.getFullYear()}-${n.getMonth()+1}-${n.getDate()}`}
+function ago(ds){const[y,m,d]=ds.split('-').map(Number),n=new Date();
+ let yrs=n.getFullYear()-y;if(n.getMonth()+1<m||(n.getMonth()+1==m&&n.getDate()<d))yrs--;
+ if(yrs>=1)return yrs+(yrs==1?' year ago':' years ago');
+ const days=Math.round((new Date(n.getFullYear(),n.getMonth(),n.getDate())-new Date(y,m-1,d))/864e5);
+ if(days<0)return'';if(days>=60)return Math.round(days/30)+' months ago';return days+' days ago'}
+let entries=[],shift=0;
+function load(){try{const r=localStorage.getItem('diary');return r?JSON.parse(r):[]}catch(e){return[]}}
+function save(e){try{localStorage.setItem('diary',JSON.stringify(e))}catch(x){$('err').textContent='Diary is too large to store in this browser; it will work until you close the page.'}}
+function show(){
+ $('setup').classList.add('hide');$('view').classList.remove('hide');
+ const i=(hash(today())+shift)%entries.length,e=entries[i];
+ const[y,m,d]=e.date.split('-').map(Number);
+ $('d').textContent=new Date(y,m-1,d).toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+ $('a').textContent=ago(e.date);
+ $('t').innerHTML='';
+ e.text.split(/\n\s*\n/).forEach(p=>{const el=document.createElement('p');el.textContent=p.trim();$('t').appendChild(el)});
+ $('info').textContent=entries.length+' entries in your diary';bkPaint()}
+$('more').onclick=()=>{shift=(shift+1+Math.floor(Math.random()*(entries.length-1||1)))%entries.length;show()};
+$('edit').onclick=()=>{$('view').classList.add('hide');$('setup').classList.remove('hide')};
+$('f').onchange=ev=>{const f=ev.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{$('ta').value=r.result};r.readAsText(f)};
+$('go').onclick=()=>{
+ const es=parse($('ta').value,$('fmt').value==='dm',+$('yr').value||0);
+ if(es===null){$('err').textContent='Your entries have no year. Please fill in the year of your first entry.';return}
+ if(!es.length){$('err').textContent="I couldn't find any dated entries. Each entry needs to start with a date such as 1st Oct.";return}
+ $('err').textContent='';entries=es;shift=0;save(es);touched();show()};
+// Backup: a reminder when one is due, saved through the share sheet or as a download
+const BK='dailymemory.backup.v1',DAY=864e5;
+const bk=(()=>{let b=null;try{b=JSON.parse(localStorage.getItem(BK))}catch(e){}b=b||{};
+ return{last:+b.last||0,since:+b.since||Date.now(),changed:+b.changed||0,snooze:+b.snooze||0,every:b.every==null?7:+b.every}})();
+function bkSave(){try{localStorage.setItem(BK,JSON.stringify(bk))}catch(e){}}
+function touched(){bk.changed=Date.now();bkSave()}
+function bkAgo(t){const d=Math.floor((Date.now()-t)/DAY);return d<1?'today':d==1?'yesterday':d+' days ago'}
+function bkDue(){const now=Date.now();   // interval passed since last backup, and the diary changed since then
+ if(!bk.every||!entries.length||now<bk.snooze)return false;
+ if(bk.last&&bk.changed<=bk.last)return false;
+ return now-(bk.last||bk.since)>=bk.every*DAY}
+function bkPaint(){const due=bkDue();$('bk').classList.toggle('hide',!due);
+ if(due)$('bkMsg').textContent=bk.last?'Last backup '+bkAgo(bk.last)+'. Back up your diary?':"Your diary isn't backed up yet.";
+ $('bkEvery').value=String(bk.every);$('bkInfo').textContent=bk.last?'Last backup '+bkAgo(bk.last):'Not backed up yet'}
+function download(data,name){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type:'application/json'}));a.download=name;
+ document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000)}
+function backup(){
+ const data=JSON.stringify({app:'dailymemory',version:1,exported:Date.now(),entries});
+ const n=new Date(),name=`daily-memory-backup-${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}.json`;
+ const done=()=>{bk.last=Date.now();bk.snooze=0;bkSave();bkPaint()};
+ let file=null;try{file=new File([data],name,{type:'application/json'})}catch(e){}
+ if(file&&navigator.canShare&&navigator.canShare({files:[file]}))
+  navigator.share({files:[file],title:name}).then(done,e=>{if(!e||e.name!=='AbortError'){download(data,name);done()}});
+ else{download(data,name);done()}}
+$('bkGo').onclick=$('bkNow').onclick=backup;
+$('bkLater').onclick=()=>{bk.snooze=Date.now()+DAY;bkSave();bkPaint()};
+$('bkEvery').onchange=e=>{bk.every=+e.target.value;bk.snooze=0;bkSave();bkPaint()};
+$('restore').onclick=()=>$('rf').click();
+$('rf').onchange=ev=>{const f=ev.target.files[0];ev.target.value='';if(!f)return;const r=new FileReader();
+ r.onload=()=>{let es=null;
+  try{const d=JSON.parse(r.result);es=(Array.isArray(d)?d:d.entries).filter(e=>e&&/^\d{4}-\d\d-\d\d$/.test(e.date)&&typeof e.text=='string')}catch(x){}
+  if(!es||!es.length){$('err').textContent="That file isn't a Daily Memory backup.";return}
+  if(entries.length&&!confirm('Replace your '+entries.length+' entries with the '+es.length+' entries in this backup?'))return;
+  $('err').textContent='';entries=es;shift=0;save(es);touched();show()};
+ r.readAsText(f)};
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&entries.length)bkPaint()});
+try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}   // ask the browser not to clear the diary
+entries=load();
+bkSave();
+if(entries.length)show();
+</script><script>if("serviceWorker" in navigator)addEventListener("load",function(){navigator.serviceWorker.register("sw.js")});</script>
+</body></html>
